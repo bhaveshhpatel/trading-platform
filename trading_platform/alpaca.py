@@ -6,11 +6,10 @@ OCC_RE = re.compile(r"^(.+?)(\d{6})([CP])(\d{8})$")
 
 
 class AlpacaIndicative:
-    """Alpaca Basic/OPRA options WebSocket adapter.
+    """Alpaca options WebSocket adapter.
 
-    Use feed=indicative for the free derivative feed. Use feed=opra only
-    when the account is entitled to OPRA. The adapter never labels indicative
-    data as full OPRA.
+    feed=indicative is the free derivative feed. feed=opra requires entitlement.
+    The adapter never labels indicative data as full OPRA.
     """
 
     def __init__(self, key=None, secret=None, feed=None):
@@ -39,8 +38,6 @@ class AlpacaIndicative:
         raw = os.getenv("ALPACA_OPTION_SYMBOLS", "")
         if raw.strip():
             return [s.strip().upper() for s in raw.split(",") if s.strip()]
-        # Alpaca option quote wildcard is not appropriate for a complete
-        # market subscription. Keep the default explicit-symbol requirement.
         raise ValueError(
             "ALPACA_OPTION_SYMBOLS must contain explicit OCC option symbols; "
             "a wildcard is intentionally not used."
@@ -56,8 +53,8 @@ class AlpacaIndicative:
                 use_bin_type=True,
             ))
             auth = msgpack.unpackb(ws.recv(), raw=False)
-            if not any(row.get("T") == "success" and row.get("msg") == "authenticated"
-                       for row in (auth if isinstance(auth, list) else [auth])):
+            auth_rows = auth if isinstance(auth, list) else [auth]
+            if not any(r.get("T") == "success" and r.get("msg") == "authenticated" for r in auth_rows):
                 raise RuntimeError(f"Alpaca authentication failed: {auth}")
 
             sub = {"action": "subscribe", "trades": symbols}
@@ -82,7 +79,6 @@ class AlpacaIndicative:
                     underlying, expiry, right, strike = self._contract(symbol)
                     if not underlying:
                         continue
-
                     if typ == "q":
                         last_quote[symbol] = (row.get("bp"), row.get("ap"))
                         continue
