@@ -19,8 +19,7 @@ def main():
     l.add_argument("--symbols", default=os.getenv("OPTIONDATA_SYMBOLS", ""))
 
     args = p.parse_args()
-    db = getattr(args, "db", "data/research.sqlite")
-    store = Store(db)
+    store = Store(getattr(args, "db", "data/research.sqlite"))
 
     if args.cmd == "import-jsonl":
         trades = []
@@ -40,8 +39,10 @@ def main():
     symbols = [x.strip() for x in args.symbols.split(",") if x.strip()]
 
     if provider == "alpaca":
+        # Genuine market-derived observations, but NOT raw OPRA.
         stream = AlpacaIndicative().stream()
     elif provider == "optiondata":
+        # Genuine provider trade stream; RAW preserves individual records.
         stream = OptionDataRaw().stream(symbols=symbols or None)
     elif provider == "unusual_whales":
         stream = UnusualWhales().stream()
@@ -52,7 +53,6 @@ def main():
 
     for t in stream:
         store.add(t)
-        tt = sorted(tags(t))
         print(
             json.dumps(
                 {
@@ -64,7 +64,7 @@ def main():
                     "data_status": (t.raw or {}).get("_data_status", "provider_normalized"),
                     "premium": t.premium,
                     "quote_side": t.quote_side,
-                    "tags": tt,
+                    "tags": sorted(tags(t)),
                 }
             ),
             flush=True,
