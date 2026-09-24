@@ -1,59 +1,66 @@
 # trading-platform
 
-Research-only options tape ingestion and analysis platform.
+Research-only options-flow ingestion and analysis platform.
 
-## Data-source reality
+## Data-source verification
 
-There is no verified permanently-free source that provides the complete, raw, real-time U.S. options OPRA tape. OPRA is the consolidated options market-data processor; current OPRA redistribution is governed by licensing and vendor/subscriber arrangements.
+No mock, synthetic, paper-market, or sandbox source is used as a live options-flow source.
 
-The project therefore distinguishes full/raw, indicative/derived, delayed, and trial sources instead of presenting them as equivalent.
+Important limitation: no permanently-free source was verified that supplies the complete raw OPRA options tape, even with a 15-minute delay.
 
-| Source | Cost status | Integration | Full raw OPRA? |
-|---|---|---|---|
-| Alpaca Basic | Free | WebSocket indicative trades/quotes for explicit contracts | No; derivative feed, trades delayed 15m |
-| Tradier Sandbox | Free account access | Delayed option quote snapshots | No; delayed snapshots, not raw tape |
-| ThetaData Free | Free | EOD options history | No; EOD only |
-| OptionData.io | Trial, then paid | RAW service-record trade stream | No completeness guarantee |
-| Unusual Whales | Paid | Provider-normalized real-time flow | No; not a raw OPRA feed |
-| OPRA | Licensed | Through entitled vendors | Yes; consolidated last-sale/quote information |
+| Source | Genuine market data? | Delay | Raw/full OPRA? | Free? | Role |
+|---|---|---|---|---|---|
+| Alpaca Basic Indicative | Yes, market-derived from OPRA | Trades 15m | No; indicative derivatives | Yes | Free baseline |
+| OptionData.io RAW | Yes, real provider trade stream | Provider real-time | Not independently guaranteed complete OPRA | Trial/paid | Raw-record research |
+| Unusual Whales | Yes, provider market-data feed | Real-time | No; normalized provider feed | No | Premium flow source |
+| Tradier Sandbox | Yes, genuine delayed market data | 15m | No | Yes | Removed from live flow path |
+| ThetaData Free | Yes, historical EOD | 1 day | No | Yes | Not a live flow source |
+| Databento OPRA | Yes, licensed OPRA | Live / delayed historical | Yes | No; temporary new-user credits | Full-tape option |
 
-## Alpaca free path
+## Alpaca
 
-Set OPTIONS_FLOW_PROVIDER=alpaca and use explicit OCC option symbols in ALPACA_OPTION_SYMBOLS. The adapter now caches the most recent quote for each subscribed contract and attaches it to subsequent trade observations, so quote-side classification can work when the feed supplies both events.
+Alpaca Basic is retained because its options stream is a genuine market-data service. However, Alpaca explicitly describes the free Indicative Pricing Feed as a derivative of OPRA: quotes are not actual OPRA quotes and trades are derivatives delayed by 15 minutes.
 
-The source is deliberately marked as alpaca_indicative with data status indicative_derivative_delayed_15m.
+The adapter therefore records the feed as indicative and does not call it raw tape.
 
-## OptionData RAW path
+## OptionData RAW
 
-Set OPTIONS_FLOW_PROVIDER=optiondata and OPTIONDATA_API_KEY. The adapter requests RAW mode rather than aggregated mode. RAW means one service record per received print, but the provider explicitly says it is not an OPRA-native audit feed and does not guarantee a complete/lossless session. Its access is trial/paid rather than permanently free.
+OptionData documents a real-time options trade WebSocket with RAW mode. RAW preserves individual option trade records instead of applying the provider's simultaneous-trade aggregation. This is useful for flow research, but the platform does not claim that the service is a complete OPRA audit feed.
 
-## Tradier delayed supplement
+## Why Tradier was removed
 
-The Tradier adapter can retrieve delayed sandbox option snapshots. It is intentionally not part of the live raw-tape path because Tradier documents sandbox options as 15-minute delayed and does not offer delayed paper streaming.
+Tradier sandbox data is genuine delayed market data constructed from the same consolidated feed, so it is not mock data. However, Tradier does not provide delayed paper streaming, and the sandbox is a snapshot/paper environment. It therefore does not belong in the live options-flow ingestion layer.
 
-## Unusual Whales
+## Why ThetaData Free is not integrated
 
-Keep the richer Unusual Whales provider by setting OPTIONS_FLOW_PROVIDER=unusual_whales and UW_API_KEY.
+The free ThetaData tier provides historical EOD U.S. stock/options data. Its delayed intraday and trade-stream capabilities require paid tiers, so it does not solve the free live/delayed raw-flow requirement.
 
-## Normalized research features
+## Full OPRA
 
-- option trade timestamp and contract
-- premium = price x contracts x 100
-- NBBO-relative quote location when bid/ask are available
-- contract size versus open interest
-- near-expiration observations
-- provider-supplied sweep flags when present
-- repeated activity on the same contract
-- historical forward-return, maximum-favorable and maximum-adverse movement
-- explicit source/data-status metadata so delayed or derived observations are never silently mixed with other feeds
+Databento's OPRA.PILLAR dataset is a genuine consolidated U.S. equity-options dataset covering last sales and national BBO across U.S. options venues. It is licensed/paid; temporary new-user credits do not make it a permanently-free source.
 
-The platform does not claim to reproduce any private proprietary alert algorithm.
+## Configuration
 
-## Tests
+Free baseline:
 
-    pip install -r requirements.txt
-    python -m pytest -q
+    OPTIONS_FLOW_PROVIDER=alpaca
+    ALPACA_OPTIONS_FEED=indicative
+    ALPACA_API_KEY_ID=...
+    ALPACA_API_SECRET_KEY=...
+    ALPACA_OPTION_SYMBOLS=...
 
-## Scope
+Raw-record provider:
 
-This is a non-executing research system. It has no broker integration, order placement, position management, or automated execution.
+    OPTIONS_FLOW_PROVIDER=optiondata
+    OPTIONDATA_API_KEY=...
+
+Premium provider:
+
+    OPTIONS_FLOW_PROVIDER=unusual_whales
+    UW_API_KEY=...
+
+## Data-integrity rules
+
+Every normalized observation retains provider and data-status metadata. Delayed/indicative observations must not be silently mixed with raw OPRA observations in research or backtests.
+
+The platform is research-only and non-executing.
