@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trading-platform"
+version = "0.1.0"
+description = "Research-only options tape ingestion and analysis"
+requires-python = ">=3.11"
+dependencies = ["requests>=2.32,<3", "python-dateutil>=2.9,<3", "websocket-client>=1.8,<2"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
