@@ -1,6 +1,8 @@
+import os
 import argparse,json
 from .core import parse_trade,tags,summarize
 from .uw import UnusualWhales
+from .alpaca import AlpacaIndicative
 from .store import Store
 
 def main():
@@ -16,7 +18,9 @@ def main():
         for e in result["repeat_events"]: store.add_event(e); print(json.dumps(e))
         print(json.dumps({k:v for k,v in result.items() if k!="repeat_events"},indent=2))
     else:
-        for t in UnusualWhales().stream():
+        provider = os.getenv("OPTIONS_FLOW_PROVIDER", "alpaca").lower()
+        stream = AlpacaIndicative().stream() if provider == "alpaca" else UnusualWhales().stream()
+        for t in stream:
             store.add(t); tt=sorted(tags(t))
             if tt: print(json.dumps({"research_only":True,"event":"tape_observation","ticker":t.ticker,"ts":t.ts.isoformat(),"premium":t.premium,"quote_side":t.quote_side,"tags":tt}),flush=True)
 
