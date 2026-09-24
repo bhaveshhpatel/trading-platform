@@ -2,6 +2,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 import websocket
 from .core import OptionTrade
 
@@ -31,48 +32,67 @@ class OptionDataRaw:
         return root, datetime.strptime(ymd, "%y%m%d").date().isoformat(), right, int(strike) / 1000
 
     def stream(self, symbols=None):
-        ws = websocket.create_connection(self.url, timeout=20)
+        params = {
+            "token": self.token,
+            "aggregation_mode": "RAW",
+        }
+        if symbols:
+            params["symbols"] = ",".join(symbols)
+        ws_url = f"{self.url}?{urlencode(params)}"
+        ws = websocket.create_connection(ws_url, timeout=20)
         try:
-            payload = {"token": self.token, "aggregation_mode": "RAW"}
-            if symbols:
-                payload["symbols"] = ",".join(symbols)
-            ws.send(json.dumps(payload))
             while True:
                 raw = ws.recv()
                 if raw is None:
                     break
-                rows = json.loads(raw)
-                if isinstance(rows, dict):
-                    rows = [rows]
-                for row in rows:
-                    symbol = str(row.get("symbol") or row.get("S") or "").upper()
-                    underlying, expiry, right, strike = self._contract(symbol)
-                    if not underlying:
-                        continue
-                    ts_raw = row.get("timestamp") or row.get("ts") or row.get("t")
-                    if ts_raw is None:
-                        continue
-                    if isinstance(ts_raw, (int, float)):
-                        ts = datetime.fromtimestamp(
-                            ts_raw / 1000 if ts_raw > 10_000_000_000 else ts_raw,
-                            tz=timezone.utc,
-                        )
-                    else:
-                        ts = datetime.fromisoformat(str(ts_raw).replace("Z", "+00:00"))
-                    yield OptionTrade(
-                        ts=ts,
-                        ticker=underlying,
-                        expiry=expiry,
-                        strike=strike,
-                        right=right,
-                        price=row.get("price") or row.get("p"),
-                        bid=row.get("bid") or row.get("bp"),
-                        ask=row.get("ask") or row.get("ap"),
-                        size=row.get("size") or row.get("s") or row.get("quantity"),
-                        exchange=row.get("exchange") or row.get("x"),
-                        trade_id=str(row.get("id") or row.get("trade_id") or ""),
-                        source="optiondata_raw",
-                        raw={**row, "_data_status": "raw_service_records_not_completeness_guaranteed"},
-                    )
+                row = json.loads(raw)
+                if not isinstance(row, dict):
+                    continue
+                if row.get("status"):
+                    if row.get("status") == "ERROR":
+                        raise RuntimeError(row.get("msg", "OptionData error"))
+                    continue
+
+                option_symbol = str(row.get("option_symbol") or "").upper()
+                underlying, expiry, right, strike = self._contract(option_symbol)
+                if not underlying:
+                    # Keep a defensive fallback for any alternate payload.
+                    underlying = str(row.get("symbol") or "").upper()
+                    expiry = row.get("expiration_date")
+                    right = "C" if str(row.get("put_call", "")).upper() == "CALL" else "P"
+                    strike = row.get("strike")
+                if not underlying or not expiry:
+                    continue
+
+                ts_raw = row.get("updated_timestamp")
+                if ts_raw is not None:
+                    ts = datetime.fromtimestamp(float(ts_raw) / 1000, tz=timezone.utc)
+                else:
+                    ts = datetime.fromisoformat(
+                        str(row.get("time")).replace(" ", "T")
+                    ).replace(tzinfo=timezone.utc)
+
+                yield OptionTrade(
+                    ts=ts,
+                    ticker=underlying,
+                    expiry=expiry,
+                    strike=float(strike) if strike is not None else None,
+                    right=right,
+                    price=row.get("price"),
+                    bid=row.get("bid"),
+                    ask=row.get("ask"),
+                    size=row.get("size"),
+                    oi=row.get("oi"),
+                    underlying=row.get("underlying_price"),
+                    iv=row.get("iv"),
+                    delta=row.get("delta"),
+                    gamma=row.get("gamma"),
+                    trade_id=str(row.get("id") or ""),
+                    source="optiondata_raw",
+                    raw={
+                        **row,
+                        "_data_status": "raw_service_records_not_completeness_guaranteed",
+                    },
+                )
         finally:
             ws.close()
