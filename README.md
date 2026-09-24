@@ -1,66 +1,82 @@
 # trading-platform
 
-Research-only options-flow ingestion and analysis platform.
+Research-only, non-executing options-flow ingestion and analysis platform.
 
-## Data-source verification
+## Free-data investigation — important conclusion
 
-No mock, synthetic, paper-market, or sandbox source is used as a live options-flow source.
+I investigated whether there is a **completely free, programmatically accessible, current-session options trade feed containing genuine reported prints** that we can safely use as the authoritative input for flow alerts.
 
-Important limitation: no permanently-free source was verified that supplies the complete raw OPRA options tape, even with a 15-minute delay.
+**I could not verify one. The code therefore does not pretend that one exists.**
 
-| Source | Genuine market data? | Delay | Raw/full OPRA? | Free? | Role |
-|---|---|---|---|---|---|
-| Alpaca Basic Indicative | Yes, market-derived from OPRA | Trades 15m | No; indicative derivatives | Yes | Free baseline |
-| OptionData.io RAW | Yes, real provider trade stream | Provider real-time | Not independently guaranteed complete OPRA | Trial/paid | Raw-record research |
-| Unusual Whales | Yes, provider market-data feed | Real-time | No; normalized provider feed | No | Premium flow source |
-| Tradier Sandbox | Yes, genuine delayed market data | 15m | No | Yes | Removed from live flow path |
-| ThetaData Free | Yes, historical EOD | 1 day | No | Yes | Not a live flow source |
-| Databento OPRA | Yes, licensed OPRA | Live / delayed historical | Yes | No; temporary new-user credits | Full-tape option |
+This distinction matters because the project needs trade-level facts for characteristics such as repeated prints, trade size/premium, and bid/ask-side classification.
 
-## Alpaca
+### What was verified
 
-Alpaca Basic is retained because its options stream is a genuine market-data service. However, Alpaca explicitly describes the free Indicative Pricing Feed as a derivative of OPRA: quotes are not actual OPRA quotes and trades are derivatives delayed by 15 minutes.
+| Source | Genuine reported option trades | Current-session | Free | Result |
+|---|---:|---:|---:|---|
+| Alpaca Basic Indicative | No — derived/indicative | Yes, delayed | Yes | **Not authoritative** |
+| Strasmore Free | No — tick-level `options_trades` is paid | No; T+1 options | Yes | **Not sufficient** |
+| Massive Options Basic | No — EOD/minute aggregates; trades paid | No | Yes | **Not sufficient** |
+| Cboe free samples/summaries | No bulk free transaction-level feed | No | Samples/summaries | **Not sufficient** |
+| OPRA licensed vendors | Yes | Yes or delayed | No | **Authoritative option** |
 
-The adapter therefore records the feed as indicative and does not call it raw tape.
+Alpaca's official documentation says its Basic options source is the Indicative Pricing Feed and that its trades are derivatives delayed by 15 minutes; quotes are also modified/indicative. Therefore the platform explicitly refuses to treat Alpaca Indicative as an authoritative flow tape. citeturn0search1turn0search3
 
-## OptionData RAW
+Strasmore's current API documentation is particularly useful for verifying the boundary: its warehouse contains `options_trades` with tick-level OPRA trades, but that table is marked **paid tier**. Its free tier is one year of history and does not include tick-level trades/quotes. citeturn3search0turn3search2
 
-OptionData documents a real-time options trade WebSocket with RAW mode. RAW preserves individual option trade records instead of applying the provider's simultaneous-trade aggregation. This is useful for flow research, but the platform does not claim that the service is a complete OPRA audit feed.
+Massive's current pricing similarly puts individual options trades behind paid tiers; the free Options Basic plan provides EOD/reference/minute aggregates instead. citeturn1search11
 
-## Why Tradier was removed
+Cboe's own Option Trades product contains trade price, size, execution exchange and NBBO at trade time, but it is a subscription product; its free material consists of samples/summaries rather than a free live transaction feed. citeturn1search13turn1search0
 
-Tradier sandbox data is genuine delayed market data constructed from the same consolidated feed, so it is not mock data. However, Tradier does not provide delayed paper streaming, and the sandbox is a snapshot/paper environment. It therefore does not belong in the live options-flow ingestion layer.
+### Why the project now has an authoritative-only guard
 
-## Why ThetaData Free is not integrated
+The signal engine should never convert an aggregate or indicative observation into a claim such as:
 
-The free ThetaData tier provides historical EOD U.S. stock/options data. Its delayed intraday and trade-stream capabilities require paid tiers, so it does not solve the free live/delayed raw-flow requirement.
+- "bought at the ask"
+- "sold at the bid"
+- "aggressive buyer"
+- "sweep"
+- "repeat institutional print"
 
-## Full OPRA
+unless the underlying data actually supports that conclusion.
 
-Databento's OPRA.PILLAR dataset is a genuine consolidated U.S. equity-options dataset covering last sales and national BBO across U.S. options venues. It is licensed/paid; temporary new-user credits do not make it a permanently-free source.
+The new `app/providers/free_sources.py` capability registry and tests make this explicit.
 
-## Configuration
+## Current architecture
 
-Free baseline:
+The platform now treats data sources as separate capability classes:
 
-    OPTIONS_FLOW_PROVIDER=alpaca
-    ALPACA_OPTIONS_FEED=indicative
-    ALPACA_API_KEY_ID=...
-    ALPACA_API_SECRET_KEY=...
-    ALPACA_OPTION_SYMBOLS=...
+```
+                   DATA PROVIDERS
+                         |
+        +----------------+----------------+
+        |                                 |
+ authoritative                      non-authoritative
+ trade feed                         research feeds
+        |                                 |
+        v                                 v
+   FLOW ENGINE                     UI / experiments
+        |
+        v
+     ALERTS
+```
 
-Raw-record provider:
+The free path can still be used for **historical/aggregate research**, but it is not allowed to masquerade as a raw trade tape.
 
-    OPTIONS_FLOW_PROVIDER=optiondata
-    OPTIONDATA_API_KEY=...
+## Cost implication
 
-Premium provider:
+GitHub Actions can provide free compute for scheduled collection, and Vercel can host the dashboard, but neither changes the licensing or fidelity of the underlying market data.
 
-    OPTIONS_FLOW_PROVIDER=unusual_whales
-    UW_API_KEY=...
+GitHub can store and process data that we legitimately receive. It cannot turn a derived feed into an OPRA print.
 
-## Data-integrity rules
+Therefore I would **not deploy a supposedly "free raw-tape alerting" system yet**. That would give false confidence.
 
-Every normalized observation retains provider and data-status metadata. Delayed/indicative observations must not be silently mixed with raw OPRA observations in research or backtests.
+The correct zero-cost state is:
 
-The platform is research-only and non-executing.
+1. Keep the repository and GitHub Actions infrastructure.
+2. Keep the non-authoritative free providers isolated.
+3. Accumulate only data whose provenance is explicitly labeled.
+4. Run the backtest engine on authoritative historical data when available.
+5. Enable authoritative live alerts when an appropriately licensed trade feed is configured.
+
+This is intentionally research-only and non-executing.
