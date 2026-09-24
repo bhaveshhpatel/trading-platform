@@ -2,64 +2,62 @@
 
 Research-only options tape ingestion and analysis platform.
 
-## Real-time tape source
+## Configurable options-flow providers
 
-The integrated provider is the official Unusual Whales API. Its current documentation describes real-time options flow covering options trades across U.S. exchanges and documents a WebSocket endpoint for live option-trade streaming. The provider currently lists real-time API access as paid; its free website tier is delayed, so this repository does not pretend that a free feed is real-time.
+The runtime provider is selected with `OPTIONS_FLOW_PROVIDER`.
 
-Configure `UW_API_KEY` at runtime. Do not commit credentials.
+### Free path: Alpaca indicative options stream
+
+Set:
 
 ```bash
+export OPTIONS_FLOW_PROVIDER=alpaca
+export ALPACA_API_KEY_ID="..."
+export ALPACA_API_SECRET_KEY="..."
+export ALPACA_OPTIONS_FEED=indicative
+python -m trading_platform.cli live
+```
+
+Alpaca's current Basic market-data plan is $0 and provides an **indicative options feed** over WebSocket. Alpaca's documentation explicitly distinguishes this from its paid OPRA feed: the indicative feed is a derivative of OPRA rather than the full consolidated OPRA tape. Therefore this is a genuinely free real-time streaming path, but it must not be treated as equivalent to a full OPRA tape. The adapter uses Alpaca's documented MsgPack options WebSocket format and normalizes option trade messages.
+
+You can restrict the subscription to contracts with:
+
+```bash
+export ALPACA_OPTION_SYMBOLS="AAPL240315C00172500,SPY240315P00450000"
+```
+
+If omitted, the adapter uses the configured default subscription value; if your Alpaca account/API version rejects a wildcard, set explicit contract symbols.
+
+### Unusual Whales path
+
+Keep the richer Unusual Whales provider by switching:
+
+```bash
+export OPTIONS_FLOW_PROVIDER=unusual_whales
 export UW_API_KEY="..."
 python -m trading_platform.cli live
 ```
 
-The WebSocket subscription message defaults to:
+Unusual Whales currently documents real-time options flow and a WebSocket option-trade stream, but its real-time API is a paid service. The free website tier is delayed.
 
-```json
-{"subscribe":"option_trades"}
-```
+## Normalized research features
 
-If the provider account documentation specifies a different subscription payload, set `UW_WS_SUBSCRIPTION_JSON` instead.
-
-## What the platform measures
-
-- raw option-trade observations
+- option trade timestamp and contract
 - premium = price x contracts x 100
-- NBBO-relative quote location
+- NBBO-relative quote location when bid/ask are available
 - contract size versus open interest
 - near-expiration observations
 - provider-supplied sweep flags when present
-- repeated activity on the same contract inside a configurable time window
-- forward-return, maximum-favorable and maximum-adverse movement for historical research
-- SQLite persistence of normalized data plus original provider payloads
+- repeated activity on the same contract
+- historical forward-return, maximum-favorable and maximum-adverse movement
 
-The feature layer is intentionally transparent and configurable. It does not claim to reproduce any private proprietary algorithm.
+The platform deliberately keeps provider payloads and uses transparent, measurable features. It does not claim to recreate any private proprietary algorithm.
 
-## Wall St. Je$us / Steamroom research mapping
+## Wall St. Je$us / Steamroom mapping
 
-Public Steamroom material describes products including Wiseguy Alerts, Net Sweeper Flow, GEX-Ray and a Wall St. Je$us feed. The public material does not disclose the complete proprietary detection logic. This project therefore maps only observable characteristics that can be measured from tape data rather than asserting that it has recreated their private system.
-
-Examples of research tags include:
-
-- large premium
-- large size
-- ask/bid quote location
-- size greater than open interest
-- near expiration
-- provider sweep flag
-- repeated same-contract activity
-
-These are descriptive research observations, not trading recommendations.
+Public Steamroom material describes tools including Wiseguy Alerts, Net Sweeper Flow, GEX-Ray and a Wall St. Je$us feed. The complete proprietary detection logic is not publicly disclosed. This project therefore implements observable tape characteristics rather than claiming to reproduce private logic.
 
 ## Historical import
-
-JSONL input:
-
-```json
-{"ts":"2026-01-02T14:30:00Z","ticker":"ABC","expiry":"2026-01-16","strike":100,"right":"call","price":2.50,"bid":2.45,"ask":2.50,"size":200,"oi":1000,"volume":3000}
-```
-
-Run:
 
 ```bash
 python -m trading_platform.cli import-jsonl sample.jsonl
@@ -74,4 +72,4 @@ python -m pytest -q
 
 ## Scope
 
-This repository is a non-executing research system. It has no broker integration, order placement, position management, or automated execution.
+This is a non-executing research system. It has no broker integration, order placement, position management, or automated execution.
