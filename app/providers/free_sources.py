@@ -1,19 +1,9 @@
-"""Free-source capability registry.
+"""Market-data capability registry.
 
-This module deliberately does NOT claim a free current-day options trade tape exists.
+The registry distinguishes authoritative transaction data from quote/chain
+data so the alert engine cannot silently treat a quote snapshot as a trade.
 
-As of 2026-09-24:
-- Alpaca Basic options data is an indicative/derived feed and is not an
-  authoritative trade tape.
-- Strasmore's free tier does not expose its tick-level options_trades table;
-  that table is paid.
-- Massive's free Options Basic tier is EOD/aggregates and does not expose
-  option trades.
-- Cboe publishes free samples and some free summaries, but its transaction
-  detail is a paid data product.
-
-Therefore the production alert engine must never silently fall back to an
-indicative or aggregate feed and label it as raw options flow.
+A free current-session authoritative options trade tape remains unverified.
 """
 
 from dataclasses import dataclass
@@ -53,6 +43,19 @@ FREE_CAPABILITIES = {
         delayed=True,
         free=True,
         notes="Free tier provides EOD/reference/minute aggregates; individual option trades require a paid tier.",
+    ),
+    "etrade_market_api": ProviderCapability(
+        name="E*TRADE Market API",
+        authoritative_trades=False,
+        current_session=True,
+        delayed=False,
+        free=True,
+        notes=(
+            "Documented API provides quotes and option chains including bid/ask, "
+            "sizes, volume, open interest, timestamps and Greeks. It does not "
+            "document a raw options Trade Tape endpoint. Production access "
+            "requires E*TRADE API and market-data agreements."
+        ),
     ),
 }
 
