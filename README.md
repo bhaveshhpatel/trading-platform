@@ -2,81 +2,99 @@
 
 Research-only, non-executing options-flow ingestion and analysis platform.
 
-## Free-data investigation — important conclusion
+## E*TRADE integration
 
-I investigated whether there is a **completely free, programmatically accessible, current-session options trade feed containing genuine reported prints** that we can safely use as the authoritative input for flow alerts.
+E*TRADE is now integrated as a read-only market-data context provider.
 
-**I could not verify one. The code therefore does not pretend that one exists.**
+The documented E*TRADE Developer Platform provides market quotes and option
+chains. Option-chain responses include bid/ask, bid/ask size, last price,
+volume, open interest, timestamps, strike/type and Greeks when available.
 
-This distinction matters because the project needs trade-level facts for characteristics such as repeated prints, trade size/premium, and bid/ask-side classification.
+The Developer Platform itself is free for developers, but production access
+requires an E*TRADE API key and the applicable API/market-data agreements.
 
-### What was verified
+### What E*TRADE does not solve
 
-| Source | Genuine reported option trades | Current-session | Free | Result |
+E*TRADE's Power E*TRADE Pro UI has a real-time options Trade Tape. That UI
+shows option, quantity, trade price, IV, underlying-at-trade, market-at-trade
+and whether the print was at/between bid/ask.
+
+The documented Developer API does NOT expose that Trade Tape as a raw
+programmatic OPRA transaction stream. We therefore do not label E*TRADE
+option-chain observations as individual trade prints.
+
+That distinction is critical for this project because trade-side signals
+require actual transaction events.
+
+## How E*TRADE improves the platform
+
+The new app/providers/etrade.py adapter can provide:
+
+1. Underlying and option quote validation.
+2. Option-chain snapshots.
+3. Bid/ask spread and liquidity measurements.
+4. Volume and open-interest context.
+5. IV/Greek context when returned.
+6. Expiration discovery.
+7. Timestamped quote/chain snapshots for research.
+
+The adapter deliberately contains no order-preview, order-placement, cancel,
+or account-trading methods.
+
+## Current free-data conclusion
+
+There is still no verified completely free, programmatically accessible,
+current-session authoritative options transaction feed in this architecture.
+
+| Source | Trade prints | Current session | Free | Role |
 |---|---:|---:|---:|---|
-| Alpaca Basic Indicative | No — derived/indicative | Yes, delayed | Yes | **Not authoritative** |
-| Strasmore Free | No — tick-level `options_trades` is paid | No; T+1 options | Yes | **Not sufficient** |
-| Massive Options Basic | No — EOD/minute aggregates; trades paid | No | Yes | **Not sufficient** |
-| Cboe free samples/summaries | No bulk free transaction-level feed | No | Samples/summaries | **Not sufficient** |
-| OPRA licensed vendors | Yes | Yes or delayed | No | **Authoritative option** |
+| E*TRADE Market API | No documented raw tape | Yes | Developer API is free; agreements required | Quote/chain context |
+| Alpaca Basic Indicative | Derived/indicative | Yes, delayed | Yes | Non-authoritative research |
+| Strasmore Free | Tick-level trades paid | No | Yes | Aggregate research |
+| Massive Options Basic | Individual trades paid | No | Yes | Aggregate research |
+| Licensed OPRA trade vendor | Yes | Depends on product | No | Authoritative trade input |
 
-Alpaca's official documentation says its Basic options source is the Indicative Pricing Feed and that its trades are derivatives delayed by 15 minutes; quotes are also modified/indicative. Therefore the platform explicitly refuses to treat Alpaca Indicative as an authoritative flow tape. citeturn0search1turn0search3
+The alert engine therefore remains authoritative-only for claims that
+require actual prints, including trade-side classification, sweeps, repeated
+prints and print-level premium.
 
-Strasmore's current API documentation is particularly useful for verifying the boundary: its warehouse contains `options_trades` with tick-level OPRA trades, but that table is marked **paid tier**. Its free tier is one year of history and does not include tick-level trades/quotes. citeturn3search0turn3search2
+## Configuration
 
-Massive's current pricing similarly puts individual options trades behind paid tiers; the free Options Basic plan provides EOD/reference/minute aggregates instead. citeturn1search11
+Set these GitHub Actions secrets/variables when E*TRADE API credentials are
+available:
 
-Cboe's own Option Trades product contains trade price, size, execution exchange and NBBO at trade time, but it is a subscription product; its free material consists of samples/summaries rather than a free live transaction feed. citeturn1search13turn1search0
+ETRADE_CONSUMER_KEY
+ETRADE_CONSUMER_SECRET
+ETRADE_ACCESS_TOKEN
+ETRADE_ACCESS_TOKEN_SECRET
+ETRADE_SANDBOX=false
 
-### Why the project now has an authoritative-only guard
+Never commit these values to the repository.
 
-The signal engine should never convert an aggregate or indicative observation into a claim such as:
+E*TRADE uses OAuth 1.0a. Its documented lifecycle says access tokens can become
+inactive after two hours without API requests and normally expire at midnight
+US Eastern time, so token lifecycle management should remain separate from
+the market-data adapter.
 
-- "bought at the ask"
-- "sold at the bid"
-- "aggressive buyer"
-- "sweep"
-- "repeat institutional print"
+## Architecture
 
-unless the underlying data actually supports that conclusion.
+    MARKET DATA
+         |
+    +----+--------------------+
+    |                         |
+    | authoritative            | context feeds
+    | transaction feed         | E*TRADE quotes/chains
+    |                         | free aggregate sources
+    +-------------+-----------+
+                  |
+           normalized data
+                  |
+           flow analytics
+             /         \
+          alerts     dashboard
 
-The new `app/providers/free_sources.py` capability registry and tests make this explicit.
+GitHub Actions can run collection/analytics jobs and Vercel can host the
+dashboard, but neither changes the licensing or fidelity of the underlying
+market data.
 
-## Current architecture
-
-The platform now treats data sources as separate capability classes:
-
-```
-                   DATA PROVIDERS
-                         |
-        +----------------+----------------+
-        |                                 |
- authoritative                      non-authoritative
- trade feed                         research feeds
-        |                                 |
-        v                                 v
-   FLOW ENGINE                     UI / experiments
-        |
-        v
-     ALERTS
-```
-
-The free path can still be used for **historical/aggregate research**, but it is not allowed to masquerade as a raw trade tape.
-
-## Cost implication
-
-GitHub Actions can provide free compute for scheduled collection, and Vercel can host the dashboard, but neither changes the licensing or fidelity of the underlying market data.
-
-GitHub can store and process data that we legitimately receive. It cannot turn a derived feed into an OPRA print.
-
-Therefore I would **not deploy a supposedly "free raw-tape alerting" system yet**. That would give false confidence.
-
-The correct zero-cost state is:
-
-1. Keep the repository and GitHub Actions infrastructure.
-2. Keep the non-authoritative free providers isolated.
-3. Accumulate only data whose provenance is explicitly labeled.
-4. Run the backtest engine on authoritative historical data when available.
-5. Enable authoritative live alerts when an appropriately licensed trade feed is configured.
-
-This is intentionally research-only and non-executing.
+This project remains research-only and non-executing.
